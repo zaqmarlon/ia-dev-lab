@@ -9,6 +9,14 @@ from src.service import get_mocked_entities
 class AppHandler(BaseHTTPRequestHandler):
     """Handle HTTP requests for the application."""
 
+    def do_GET(self) -> None:
+        """Handle GET requests."""
+        if self.path != "/ping":
+            self._send_json(404, {"detail": "Not Found"})
+            return
+
+        self._send_json(200, {"message": "pong"})
+
     def do_POST(self) -> None:
         """Handle POST requests."""
         if self.path != "/entities":
