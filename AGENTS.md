@@ -1,4 +1,4 @@
-# CLAUDE.md
+# AGENTS.md
 
 ## Sobre o projeto
 Aplicação web para extração de informações de texto através de LLM.
