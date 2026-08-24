@@ -1,0 +1,1 @@
+Para a API, será utilizada a biblioteca Python FastAPI.

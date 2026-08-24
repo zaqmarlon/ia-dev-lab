@@ -1,0 +1,1 @@
+Para este projeto, optou-se por utilizar o modelo `gpt-5.6-terra medium`.

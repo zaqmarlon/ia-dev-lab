@@ -1,0 +1,1 @@
+A linguagem utilizada será Python.
