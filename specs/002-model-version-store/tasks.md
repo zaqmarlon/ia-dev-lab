@@ -23,9 +23,9 @@ description: "Dependency-ordered implementation tasks for the Versioned Model St
 
 **Purpose**: Prepare the existing Python service for FastAPI, multipart uploads, and the planned test structure.
 
-- [ ] T001 Add pinned FastAPI, Uvicorn, python-multipart, and HTTP test client dependencies in requirements.txt
-- [ ] T002 Create the contract, integration, unit, and fixture package structure in tests/contract/__init__.py, tests/integration/__init__.py, tests/unit/__init__.py, and tests/fixtures/stub-model.bin
-- [ ] T003 [P] Document dependency installation and the FastAPI development command in README.md
+- [X] T001 Add pinned FastAPI, Uvicorn, python-multipart, and HTTP test client dependencies in requirements.txt
+- [X] T002 Create the contract, integration, unit, and fixture package structure in tests/contract/__init__.py, tests/integration/__init__.py, tests/unit/__init__.py, and tests/fixtures/stub-model.bin
+- [X] T003 [P] Document dependency installation and the FastAPI development command in README.md
 
 ---
 
@@ -35,11 +35,11 @@ description: "Dependency-ordered implementation tasks for the Versioned Model St
 
 **Critical**: No user story work starts until this phase is complete.
 
-- [ ] T004 Implement documented data-directory, SQLite-path, and 50 MiB limit settings in src/settings.py
-- [ ] T005 [P] Define documented Model, ModelVersion, ModelArtifact, ActivationRecord, lifecycle status, and store exception types in src/models.py
-- [ ] T006 [P] Define model-version response, history response, metadata parsing, and error response schemas in src/schemas.py
-- [ ] T007 Implement SQLite schema initialization, connection transactions, normalized model identity, artifact path resolution, and activation-record tables in src/model_store.py
-- [ ] T008 Wire settings, the catalog store, and the model service through FastAPI application lifespan/dependencies in src/app.py
+- [X] T004 Implement documented data-directory, SQLite-path, and 50 MiB limit settings in src/settings.py
+- [X] T005 [P] Define documented Model, ModelVersion, ModelArtifact, ActivationRecord, lifecycle status, and store exception types in src/models.py
+- [X] T006 [P] Define model-version response, history response, metadata parsing, and error response schemas in src/schemas.py
+- [X] T007 Implement SQLite schema initialization, connection transactions, normalized model identity, artifact path resolution, and activation-record tables in src/model_store.py
+- [X] T008 Wire settings, the catalog store, and the model service through FastAPI application lifespan/dependencies in src/app.py
 
 **Checkpoint**: Shared configuration, domain contracts, and persistent storage are ready.
 
@@ -53,16 +53,16 @@ description: "Dependency-ordered implementation tasks for the Versioned Model St
 
 ### Tests for User Story 1
 
-- [ ] T009 [P] [US1] Add OpenAPI-aligned registration and version-detail contract tests in tests/contract/test_models_contract.py
-- [ ] T010 [P] [US1] Add persistence tests for model creation, digest-addressed artifact storage, automatic and explicit version assignment, and immutable records in tests/integration/test_model_store.py
-- [ ] T011 [P] [US1] Add HTTP tests for multipart registration and version-detail retrieval in tests/integration/test_models_endpoint.py
+- [X] T009 [P] [US1] Add OpenAPI-aligned registration and version-detail contract tests in tests/contract/test_models_contract.py
+- [X] T010 [P] [US1] Add persistence tests for model creation, digest-addressed artifact storage, automatic and explicit version assignment, and immutable records in tests/integration/test_model_store.py
+- [X] T011 [P] [US1] Add HTTP tests for multipart registration and version-detail retrieval in tests/integration/test_models_endpoint.py
 
 ### Implementation for User Story 1
 
-- [ ] T012 [US1] Implement staged artifact writes, SHA-256 digesting, atomic final placement, model creation, version insertion, and detail lookup in src/model_store.py
-- [ ] T013 [US1] Implement documented registration and version-detail workflows with positive-version and valid-input handling in src/model_service.py
-- [ ] T014 [US1] Implement `POST /models/{model_name}/versions` and `GET /models/{model_name}/versions/{version}` FastAPI routes in src/app.py
-- [ ] T015 [US1] Run the US1 contract, persistence, and HTTP tests and record any necessary contract-alignment corrections in tests/contract/test_models_contract.py
+- [X] T012 [US1] Implement staged artifact writes, SHA-256 digesting, atomic final placement, model creation, version insertion, and detail lookup in src/model_store.py
+- [X] T013 [US1] Implement documented registration and version-detail workflows with positive-version and valid-input handling in src/model_service.py
+- [X] T014 [US1] Implement `POST /models/{model_name}/versions` and `GET /models/{model_name}/versions/{version}` FastAPI routes in src/app.py
+- [X] T015 [US1] Run the US1 contract, persistence, and HTTP tests and record any necessary contract-alignment corrections in tests/contract/test_models_contract.py
 
 **Checkpoint**: A valid model version can be registered and retrieved without executing its artifact.
 
@@ -76,17 +76,17 @@ description: "Dependency-ordered implementation tasks for the Versioned Model St
 
 ### Tests for User Story 2
 
-- [ ] T016 [P] [US2] Add history and activation API contract tests, including missing and ineligible versions, in tests/contract/test_models_contract.py
-- [ ] T017 [P] [US2] Add service tests for deterministic history, active-version resolution, explicit-version resolution, and eligibility failures in tests/unit/test_model_service.py
-- [ ] T018 [P] [US2] Add persistence and concurrency tests for atomic single-active transitions and activation audit records in tests/integration/test_model_store.py
-- [ ] T019 [P] [US2] Add HTTP journey tests for listing and switching active versions in tests/integration/test_models_endpoint.py
+- [X] T016 [P] [US2] Add history and activation API contract tests, including missing and ineligible versions, in tests/contract/test_models_contract.py
+- [X] T017 [P] [US2] Add service tests for deterministic history, active-version resolution, explicit-version resolution, and eligibility failures in tests/unit/test_model_service.py
+- [X] T018 [P] [US2] Add persistence and concurrency tests for atomic single-active transitions and activation audit records in tests/integration/test_model_store.py
+- [X] T019 [P] [US2] Add HTTP journey tests for listing and switching active versions in tests/integration/test_models_endpoint.py
 
 ### Implementation for User Story 2
 
-- [ ] T020 [US2] Implement descending history queries, transactional activation, activation audit insertion, and active/specific resolution in src/model_store.py
-- [ ] T021 [US2] Implement documented history, activation eligibility, and extraction-facing resolution workflows in src/model_service.py
-- [ ] T022 [US2] Implement `GET /models/{model_name}/versions` and `POST /models/{model_name}/versions/{version}/activate` FastAPI routes in src/app.py
-- [ ] T023 [US2] Run the US2 unit, contract, persistence, concurrency, and HTTP tests and record any necessary contract-alignment corrections in tests/contract/test_models_contract.py
+- [X] T020 [US2] Implement descending history queries, transactional activation, activation audit insertion, and active/specific resolution in src/model_store.py
+- [X] T021 [US2] Implement documented history, activation eligibility, and extraction-facing resolution workflows in src/model_service.py
+- [X] T022 [US2] Implement `GET /models/{model_name}/versions` and `POST /models/{model_name}/versions/{version}/activate` FastAPI routes in src/app.py
+- [X] T023 [US2] Run the US2 unit, contract, persistence, concurrency, and HTTP tests and record any necessary contract-alignment corrections in tests/contract/test_models_contract.py
 
 **Checkpoint**: Version history and active-version selection work independently while preserving prior records.
 
@@ -100,16 +100,16 @@ description: "Dependency-ordered implementation tasks for the Versioned Model St
 
 ### Tests for User Story 3
 
-- [ ] T024 [P] [US3] Add unit tests for blank names, invalid metadata, non-positive versions, empty content, and exact/over-limit size boundaries in tests/unit/test_model_service.py
-- [ ] T025 [P] [US3] Add HTTP tests for duplicate, empty, malformed, and oversized registration responses in tests/integration/test_models_endpoint.py
-- [ ] T026 [P] [US3] Add rollback tests for concurrent duplicates, interrupted writes, catalog commit failure, and orphan cleanup in tests/integration/test_model_store.py
+- [X] T024 [P] [US3] Add unit tests for blank names, invalid metadata, non-positive versions, empty content, and exact/over-limit size boundaries in tests/unit/test_model_service.py
+- [X] T025 [P] [US3] Add HTTP tests for duplicate, empty, malformed, and oversized registration responses in tests/integration/test_models_endpoint.py
+- [X] T026 [P] [US3] Add rollback tests for concurrent duplicates, interrupted writes, catalog commit failure, and orphan cleanup in tests/integration/test_model_store.py
 
 ### Implementation for User Story 3
 
-- [ ] T027 [US3] Implement streaming size enforcement, empty/incomplete artifact detection, duplicate protection, and compensating artifact cleanup in src/model_store.py
-- [ ] T028 [US3] Implement actionable validation, conflict, absence, ineligibility, and size-limit errors in src/model_service.py
-- [ ] T029 [US3] Map store and validation failures to standardized 404, 409, 413, and 422 ErrorResponse payloads in src/app.py
-- [ ] T030 [US3] Run all US3 boundary, concurrency, rollback, and HTTP rejection tests and record any necessary contract-alignment corrections in tests/contract/test_models_contract.py
+- [X] T027 [US3] Implement streaming size enforcement, empty/incomplete artifact detection, duplicate protection, and compensating artifact cleanup in src/model_store.py
+- [X] T028 [US3] Implement actionable validation, conflict, absence, ineligibility, and size-limit errors in src/model_service.py
+- [X] T029 [US3] Map store and validation failures to standardized 404, 409, 413, and 422 ErrorResponse payloads in src/app.py
+- [X] T030 [US3] Run all US3 boundary, concurrency, rollback, and HTTP rejection tests and record any necessary contract-alignment corrections in tests/contract/test_models_contract.py
 
 **Checkpoint**: Invalid operations are rejected atomically with actionable responses.
 
@@ -119,11 +119,11 @@ description: "Dependency-ordered implementation tasks for the Versioned Model St
 
 **Purpose**: Validate integration, performance expectations, documentation, and compatibility with the existing extraction API.
 
-- [ ] T031 [P] Preserve and adapt the existing ping and entity endpoint regression coverage in tests/test_ping_endpoint.py and tests/test_entities_endpoint.py
-- [ ] T032 [P] Document model registration, history, activation, configuration, and published size limit in README.md
-- [ ] T033 Add a history-of-100-versions timing assertion for the three-second target in tests/integration/test_model_store.py
-- [ ] T034 Run the complete unittest suite and the placeholder-artifact scenarios from specs/002-model-version-store/quickstart.md
-- [ ] T035 Verify every public function and method added for this feature has English documentation in src/app.py, src/models.py, src/model_store.py, src/model_service.py, src/schemas.py, and src/settings.py
+- [X] T031 [P] Preserve and adapt the existing ping and entity endpoint regression coverage in tests/test_ping_endpoint.py and tests/test_entities_endpoint.py
+- [X] T032 [P] Document model registration, history, activation, configuration, and published size limit in README.md
+- [X] T033 Add a history-of-100-versions timing assertion for the three-second target in tests/integration/test_model_store.py
+- [X] T034 Run the complete unittest suite and the placeholder-artifact scenarios from specs/002-model-version-store/quickstart.md
+- [X] T035 Verify every public function and method added for this feature has English documentation in src/app.py, src/models.py, src/model_store.py, src/model_service.py, src/schemas.py, and src/settings.py
 
 ---
 

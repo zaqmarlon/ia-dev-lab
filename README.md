@@ -1,78 +1,69 @@
 # Entity Extraction API
 
-Uma API HTTP simples para extração de entidades de texto. No estado atual, a extração é simulada com uma resposta fixa, servindo como base para a futura integração com um modelo de linguagem.
+A FastAPI service for mocked entity extraction and immutable model-version management.
 
-## Requisitos
+## Requirements
 
-- Python 3.9 ou superior
+- Python 3.9 or newer
+- One writable application data directory
 
-O projeto usa apenas a biblioteca padrão do Python.
-
-## Testes
-
-Execute a suíte de testes a partir da raiz do repositório:
+Install and start the service:
 
 ```bash
-python -m unittest discover -s tests
+python -m venv .venv
+.venv/bin/pip install -r requirements.txt
+.venv/bin/uvicorn src.app:app --reload --port 8000
+```
+
+The interactive API documentation is available at `http://localhost:8000/docs`.
+
+## Configuration
+
+| Environment variable | Default | Purpose |
+| --- | --- | --- |
+| `MODEL_STORE_DATA_DIR` | `.data/model-store` | Artifact data directory |
+| `MODEL_STORE_DATABASE_PATH` | `<data-dir>/catalog.sqlite3` | SQLite catalog path |
+| `MODEL_STORE_MAX_ARTIFACT_SIZE` | `52428800` | Published maximum upload size in bytes (50 MiB) |
+
+## Tests
+
+Run the complete suite from the repository root:
+
+```bash
+.venv/bin/python -m unittest discover -s tests
 ```
 
 ## Endpoints
 
-| Método | Rota | Resposta |
+| Method | Route | Purpose |
 | --- | --- | --- |
-| `GET` | `/ping` | Verifica a disponibilidade da aplicação. |
-| `POST` | `/entities` | Retorna as entidades extraídas do texto enviado. |
+| `GET` | `/ping` | Check service availability |
+| `POST` | `/entities` | Return the current mocked extraction result |
+| `POST` | `/models/{model_name}/versions` | Register an immutable artifact using multipart form data |
+| `GET` | `/models/{model_name}/versions` | List versions in descending numeric order |
+| `GET` | `/models/{model_name}/versions/{version}` | Retrieve one version |
+| `POST` | `/models/{model_name}/versions/{version}/activate` | Select a version for future extraction work |
 
-### `GET /ping`
+Register a placeholder artifact:
 
-Resposta de sucesso:
-
-```json
-{
-  "message": "pong"
-}
+```bash
+curl -sS -X POST http://localhost:8000/models/invoice-extractor/versions \
+  -F 'artifact=@tests/fixtures/stub-model.bin;type=application/octet-stream' \
+  -F 'description=Invoice field extraction model' \
+  -F 'metadata={"purpose":"contract-validation-only"}'
 ```
 
-### `POST /entities`
+New versions start as `registered`. Activation changes the selected version to `active` and returns the previous active version to `registered`. Artifacts are opaque, digest-addressed files; this service never loads or executes them.
 
-Envie um JSON com o campo `text`:
-
-```json
-{
-  "text": "OpenAI is based in San Francisco."
-}
-```
-
-Resposta atual:
-
-```json
-{
-  "entities": [
-    {
-      "text": "OpenAI",
-      "label": "ORG",
-      "confidence": 0.98
-    },
-    {
-      "text": "San Francisco",
-      "label": "GPE",
-      "confidence": 0.95
-    }
-  ]
-}
-```
-
-## Estrutura
+## Project Structure
 
 ```text
-src/
-  app.py       Manipulador HTTP e rotas
-  service.py   Serviço de extração simulado
-  schemas.py   Tipos de dados da API
-tests/         Testes dos endpoints
-docs/adr/      Decisões de arquitetura
+src/app.py            FastAPI routes and error mapping
+src/model_service.py  Model lifecycle workflows
+src/model_store.py    SQLite catalog and immutable artifact storage
+src/models.py         Domain records and errors
+src/schemas.py        HTTP schemas
+src/settings.py       Environment configuration
+src/service.py        Mocked extraction service
+tests/                Unit, contract, persistence, concurrency, and HTTP tests
 ```
-
-## Próximos passos
-
-Substituir o serviço simulado por uma integração com LLM e disponibilizar um ponto de entrada para executar o servidor HTTP.
