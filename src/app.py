@@ -7,6 +7,13 @@ from fastapi import Depends, FastAPI, File, Form, Path as PathParameter, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
+from src.extraction import (
+    ExtractionRequestError,
+    ExtractionVolumeError,
+    ModelCatalog,
+    StubModelCatalog,
+)
+from src.inference import InferenceProvider, StubInferenceProvider
 from src.model_service import ModelService
 from src.model_store import ModelStore
 from src.models import (
@@ -17,9 +24,17 @@ from src.models import (
     ModelVersion,
     ModelVersionNotFoundError,
 )
-from src.schemas import ErrorResponse, ModelVersionHistoryResponse, ModelVersionResponse, parse_metadata
-from src.service import get_mocked_entities
+from src.schemas import (
+    ErrorResponse,
+    ExtractionRequest,
+    ExtractionResponse,
+    ModelVersionHistoryResponse,
+    ModelVersionResponse,
+    parse_metadata,
+)
+from src.service import ExtractionService, get_mocked_entities
 from src.settings import Settings
+from src.uncertainty import StubUncertaintyEstimator, UncertaintyEstimator
 
 
 async def get_model_service(request: Request) -> ModelService:
@@ -27,7 +42,17 @@ async def get_model_service(request: Request) -> ModelService:
     return request.app.state.model_service
 
 
-def create_app(settings: Optional[Settings] = None) -> FastAPI:
+async def get_extraction_service(request: Request) -> ExtractionService:
+    """Return the extraction service configured for the current application."""
+    return request.app.state.extraction_service
+
+
+def create_app(
+    settings: Optional[Settings] = None,
+    inference_provider: Optional[InferenceProvider] = None,
+    uncertainty_estimator: Optional[UncertaintyEstimator] = None,
+    model_catalog: Optional[ModelCatalog] = None,
+) -> FastAPI:
     """Create a configured HTTP application."""
     application_settings = settings or Settings.from_environment()
     store = ModelStore(
@@ -36,10 +61,18 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         application_settings.max_artifact_size,
     )
     service = ModelService(store)
+    extraction_service = ExtractionService(
+        inference_provider or StubInferenceProvider(),
+        uncertainty_estimator or StubUncertaintyEstimator(),
+        model_catalog or StubModelCatalog(),
+        application_settings.max_extraction_texts,
+        application_settings.max_extraction_characters,
+    )
     application = FastAPI(title="Versioned Model Store API", version="1.0.0")
     application.state.settings = application_settings
     application.state.model_store = store
     application.state.model_service = service
+    application.state.extraction_service = extraction_service
 
     @application.exception_handler(ModelVersionNotFoundError)
     async def handle_not_found(request: object, error: ModelVersionNotFoundError) -> JSONResponse:
@@ -87,6 +120,28 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
             status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
         )
 
+    @application.exception_handler(ExtractionRequestError)
+    async def handle_extraction_request(
+        request: object,
+        error: ExtractionRequestError,
+    ) -> JSONResponse:
+        """Map configured extraction request limits to HTTP 422."""
+        return JSONResponse(
+            ErrorResponse(detail=str(error), limit=error.limit).model_dump(),
+            status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
+        )
+
+    @application.exception_handler(ExtractionVolumeError)
+    async def handle_extraction_volume(
+        request: object,
+        error: ExtractionVolumeError,
+    ) -> JSONResponse:
+        """Map excessive combined source content to HTTP 413."""
+        return JSONResponse(
+            ErrorResponse(detail=str(error), limit=error.limit).model_dump(),
+            status_code=HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
+        )
+
     @application.get("/ping")
     async def ping() -> dict[str, str]:
         """Return the service availability payload."""
@@ -96,6 +151,21 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     async def extract_entities(payload: dict[str, str]) -> dict[str, object]:
         """Return the existing mocked extraction response."""
         return {"entities": get_mocked_entities(payload.get("text", ""))}
+
+    @application.post(
+        "/extractions",
+        response_model=ExtractionResponse,
+        responses={
+            413: {"model": ErrorResponse},
+            422: {"model": ErrorResponse},
+        },
+    )
+    async def create_extraction(
+        payload: ExtractionRequest,
+        extraction_service: ExtractionService = Depends(get_extraction_service),
+    ) -> ExtractionResponse:
+        """Extract a shared property schema from an ordered batch of texts."""
+        return ExtractionResponse.model_validate(extraction_service.extract(payload))
 
     def response(version_record: ModelVersion) -> ModelVersionResponse:
         """Convert a domain version to its HTTP response schema."""

@@ -2,14 +2,167 @@
 
 import json
 from datetime import datetime
+from enum import Enum
 from typing import Any, Optional
+import warnings
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from src.extraction import ExecutionMode, InferenceStatus, OutcomeStatus, UncertaintyStatus
 from src.models import LifecycleStatus
 
 
 EntityItem = dict[str, object]
+
+
+class PropertyType(str, Enum):
+    """Enumerate property types supported by the extraction contract."""
+
+    STRING = "string"
+    NUMBER = "number"
+    BOOLEAN = "boolean"
+    STRING_LIST = "string_list"
+
+
+class SourceText(BaseModel):
+    """Validate one identified source text."""
+
+    id: str
+    text: str
+
+    @field_validator("id", "text")
+    @classmethod
+    def require_non_blank(cls, value: str) -> str:
+        """Normalize and reject blank source fields."""
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("must not be blank")
+        return normalized
+
+
+class PropertyDefinition(BaseModel):
+    """Validate one requested extraction property."""
+
+    name: str
+    type: PropertyType
+    required: bool = False
+    description: Optional[str] = None
+
+    @field_validator("name")
+    @classmethod
+    def require_non_blank_name(cls, value: str) -> str:
+        """Normalize and reject a blank property name."""
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("property name must not be blank")
+        return normalized
+
+
+class ExtractionSchema(BaseModel):
+    """Validate the shared property schema for a batch."""
+
+    properties: list[PropertyDefinition] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def require_unique_names(self) -> "ExtractionSchema":
+        """Reject duplicate case-sensitive property names."""
+        names = [property_definition.name for property_definition in self.properties]
+        if len(names) != len(set(names)):
+            raise ValueError("property names must be unique")
+        return self
+
+
+class ModelSelection(BaseModel):
+    """Validate an optional requested model selection."""
+
+    name: str
+    version: Optional[str] = None
+
+    @field_validator("name")
+    @classmethod
+    def require_non_blank_name(cls, value: str) -> str:
+        """Normalize and reject a blank model name."""
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("model name must not be blank")
+        return normalized
+
+
+with warnings.catch_warnings():
+    warnings.filterwarnings("ignore", message='Field name "schema".*')
+
+    class ExtractionRequest(BaseModel):
+        """Validate a synchronous schema-driven batch request."""
+
+        texts: list[SourceText] = Field(min_length=1, max_length=10)
+        schema: ExtractionSchema
+        model: Optional[ModelSelection] = None
+
+        @model_validator(mode="after")
+        def require_unique_source_ids(self) -> "ExtractionRequest":
+            """Reject duplicate source identifiers while allowing duplicate content."""
+            identifiers = [source.id for source in self.texts]
+            if len(identifiers) != len(set(identifiers)):
+                raise ValueError("source identifiers must be unique")
+            return self
+
+
+class ResolvedModelReference(BaseModel):
+    """Serialize the model or stub selected for execution."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    name: str
+    version: str
+
+
+class UncertaintyResult(BaseModel):
+    """Serialize uncertainty for one extracted property."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    value: Optional[float] = Field(default=None, ge=0, le=1)
+    status: UncertaintyStatus
+
+
+class PropertyResult(BaseModel):
+    """Serialize one requested property's result."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    value: Any
+    inference_status: InferenceStatus
+    uncertainty: UncertaintyResult
+
+
+class ItemError(BaseModel):
+    """Serialize an item-level processing failure."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    code: str
+    detail: str
+
+
+class ExtractionOutcome(BaseModel):
+    """Serialize one ordered source outcome."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    source_id: str
+    status: OutcomeStatus
+    properties: dict[str, PropertyResult]
+    error: Optional[ItemError] = None
+
+
+class ExtractionResponse(BaseModel):
+    """Serialize a complete batch extraction result."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    execution_mode: ExecutionMode
+    model: ResolvedModelReference
+    outcomes: list[ExtractionOutcome]
 
 
 class ModelVersionResponse(BaseModel):
