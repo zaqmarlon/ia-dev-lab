@@ -1,0 +1,170 @@
+openapi: 3.1.0
+info:
+  title: Text Extraction API
+  version: 1.0.0
+paths:
+  /extractions:
+    post:
+      operationId: createExtraction
+      summary: Extract schema-defined properties from a batch of texts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExtractionRequest'
+      responses:
+        '200':
+          description: Ordered extraction outcomes, including any item-level failures
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExtractionResponse'
+        '413':
+          description: Combined text volume exceeds the configured limit
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Request structure, text, or extraction schema is invalid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+components:
+  schemas:
+    ExtractionRequest:
+      type: object
+      required: [texts, schema]
+      properties:
+        texts:
+          type: array
+          minItems: 1
+          maxItems: 10
+          items:
+            $ref: '#/components/schemas/SourceText'
+        schema:
+          $ref: '#/components/schemas/ExtractionSchema'
+        model:
+          oneOf:
+            - $ref: '#/components/schemas/ModelSelection'
+            - type: 'null'
+    SourceText:
+      type: object
+      required: [id, text]
+      properties:
+        id:
+          type: string
+          minLength: 1
+        text:
+          type: string
+          minLength: 1
+    ExtractionSchema:
+      type: object
+      required: [properties]
+      properties:
+        properties:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/PropertyDefinition'
+    PropertyDefinition:
+      type: object
+      required: [name, type]
+      properties:
+        name:
+          type: string
+          minLength: 1
+        type:
+          type: string
+          enum: [string, number, boolean, string_list]
+        required:
+          type: boolean
+          default: false
+        description:
+          type: [string, 'null']
+    ModelSelection:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+        version:
+          type: [string, 'null']
+    ExtractionResponse:
+      type: object
+      required: [execution_mode, model, outcomes]
+      properties:
+        execution_mode:
+          type: string
+          enum: [stub, model]
+        model:
+          $ref: '#/components/schemas/ResolvedModelReference'
+        outcomes:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExtractionOutcome'
+    ResolvedModelReference:
+      type: object
+      required: [name, version]
+      properties:
+        name:
+          type: string
+        version:
+          type: string
+    ExtractionOutcome:
+      type: object
+      required: [source_id, status, properties]
+      properties:
+        source_id:
+          type: string
+        status:
+          type: string
+          enum: [completed, failed]
+        properties:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/PropertyResult'
+        error:
+          oneOf:
+            - $ref: '#/components/schemas/ItemError'
+            - type: 'null'
+    PropertyResult:
+      type: object
+      required: [value, inference_status, uncertainty]
+      properties:
+        value: {}
+        inference_status:
+          type: string
+          enum: [inferred, not_found, not_inferred]
+        uncertainty:
+          $ref: '#/components/schemas/UncertaintyResult'
+    UncertaintyResult:
+      type: object
+      required: [value, status]
+      properties:
+        value:
+          type: [number, 'null']
+          minimum: 0
+          maximum: 1
+        status:
+          type: string
+          enum: [calculated, not_calculated]
+    ItemError:
+      type: object
+      required: [code, detail]
+      properties:
+        code:
+          type: string
+        detail:
+          type: string
+    ErrorResponse:
+      type: object
+      required: [detail]
+      properties:
+        detail:
+          type: string
+        limit:
+          type: [integer, 'null']

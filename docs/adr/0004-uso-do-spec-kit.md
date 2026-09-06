@@ -1,0 +1,1 @@
+Não houve razão por resultado comparativo do uso do Spec Kit neste projeto. Foi uma decisão arbitrária conhecer essa abordagem para realizar SDD.

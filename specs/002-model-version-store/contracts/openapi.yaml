@@ -1,0 +1,184 @@
+openapi: 3.1.0
+info:
+  title: Versioned Model Store API
+  version: 1.0.0
+paths:
+  /models/{model_name}/versions:
+    post:
+      operationId: registerModelVersion
+      summary: Register an immutable opaque model version
+      parameters:
+        - $ref: '#/components/parameters/ModelName'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [artifact]
+              properties:
+                artifact:
+                  type: string
+                  contentMediaType: application/octet-stream
+                version:
+                  type: [integer, 'null']
+                  minimum: 1
+                description:
+                  type: [string, 'null']
+                metadata:
+                  type: string
+                  description: JSON object containing descriptive metadata
+      responses:
+        '201':
+          description: Version registered without executing the artifact
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelVersion'
+        '409':
+          description: Model name and version already exist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: Artifact exceeds the configured size limit
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Registration input or artifact is invalid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    get:
+      operationId: listModelVersions
+      summary: List immutable versions in descending numeric order
+      parameters:
+        - $ref: '#/components/parameters/ModelName'
+      responses:
+        '200':
+          description: Complete version history
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [model_name, versions]
+                properties:
+                  model_name:
+                    type: string
+                  versions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ModelVersion'
+        '404':
+          description: Model identity does not exist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /models/{model_name}/versions/{version}:
+    get:
+      operationId: getModelVersion
+      summary: Retrieve one model version
+      parameters:
+        - $ref: '#/components/parameters/ModelName'
+        - $ref: '#/components/parameters/Version'
+      responses:
+        '200':
+          description: Model version details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelVersion'
+        '404':
+          description: Model version does not exist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /models/{model_name}/versions/{version}/activate:
+    post:
+      operationId: activateModelVersion
+      summary: Atomically select a version for new extraction work
+      parameters:
+        - $ref: '#/components/parameters/ModelName'
+        - $ref: '#/components/parameters/Version'
+      responses:
+        '200':
+          description: Selected version is now active
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelVersion'
+        '404':
+          description: Model version does not exist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Version is not eligible for activation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+components:
+  parameters:
+    ModelName:
+      name: model_name
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+    Version:
+      name: version
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+  schemas:
+    ModelVersion:
+      type: object
+      required:
+        - model_name
+        - version
+        - status
+        - artifact_digest
+        - artifact_size
+        - metadata
+        - created_at
+      properties:
+        model_name:
+          type: string
+        version:
+          type: integer
+          minimum: 1
+        status:
+          type: string
+          enum: [registered, active]
+        artifact_digest:
+          type: string
+        artifact_size:
+          type: integer
+          minimum: 1
+        description:
+          type: [string, 'null']
+        metadata:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+    ErrorResponse:
+      type: object
+      required: [detail]
+      properties:
+        detail:
+          type: string
+        limit:
+          type: [integer, 'null']

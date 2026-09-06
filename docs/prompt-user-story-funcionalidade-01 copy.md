@@ -1,0 +1,1 @@
+Como usuário, desejo enviar uma requisição contendo textos e um esquema com as propriedades que devem ser extraídas desses textos.
