@@ -1,0 +1,259 @@
+openapi: 3.1.0
+info:
+  title: Asynchronous Batch Entity Extraction API
+  version: 1.0.0
+paths:
+  /extraction-tasks:
+    post:
+      operationId: createExtractionTask
+      summary: Accept a validated extraction batch for asynchronous processing
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExtractionTaskRequest'
+      responses:
+        '202':
+          description: Task durably accepted without waiting for extraction
+          headers:
+            Location:
+              required: true
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskStatus'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '413':
+          description: Combined text volume exceeds the configured limit
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Complete submission is invalid or exceeds the item limit
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /extraction-tasks/{task_id}:
+    get:
+      operationId: getExtractionTask
+      summary: Get owner-scoped lifecycle status and progress
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+      responses:
+        '200':
+          description: Current task status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskStatus'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/TaskNotFound'
+        '410':
+          $ref: '#/components/responses/TaskExpired'
+  /extraction-tasks/{task_id}/results:
+    get:
+      operationId: getExtractionTaskResults
+      summary: Get all ordered outcomes for a terminal task
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+      responses:
+        '200':
+          description: Complete final task results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskResults'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/TaskNotFound'
+        '409':
+          description: Task is non-terminal and final results are not available
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultsPendingError'
+        '410':
+          $ref: '#/components/responses/TaskExpired'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  parameters:
+    TaskId:
+      name: task_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  responses:
+    Unauthorized:
+      description: Bearer credentials are missing or invalid
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    TaskNotFound:
+      description: Task is unknown or inaccessible to the authenticated owner
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    TaskExpired:
+      description: The owner's task exceeded its result retention period
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+  schemas:
+    ExtractionTaskRequest:
+      type: object
+      required: [texts, schema]
+      properties:
+        texts:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/SourceText'
+        schema:
+          $ref: '#/components/schemas/ExtractionSchema'
+        model:
+          oneOf:
+            - $ref: '#/components/schemas/ModelSelection'
+            - type: 'null'
+    SourceText:
+      type: object
+      required: [id, text]
+      properties:
+        id: {type: string, minLength: 1}
+        text: {type: string, minLength: 1}
+    ExtractionSchema:
+      type: object
+      required: [properties]
+      properties:
+        properties:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/PropertyDefinition'
+    PropertyDefinition:
+      type: object
+      required: [name, type]
+      properties:
+        name: {type: string, minLength: 1}
+        type:
+          type: string
+          enum: [string, number, boolean, string_list]
+        required: {type: boolean, default: false}
+        description: {type: [string, 'null']}
+    ModelSelection:
+      type: object
+      required: [name]
+      properties:
+        name: {type: string, minLength: 1}
+        version: {type: [string, 'null']}
+    TaskStatusValue:
+      type: string
+      enum: [queued, processing, completed, partially_completed, failed]
+    Progress:
+      type: object
+      required: [accepted, processed, successful, failed]
+      properties:
+        accepted: {type: integer, minimum: 1}
+        processed: {type: integer, minimum: 0}
+        successful: {type: integer, minimum: 0}
+        failed: {type: integer, minimum: 0}
+    TaskStatus:
+      type: object
+      required: [task_id, status, progress, created_at, updated_at, expires_at]
+      properties:
+        task_id: {type: string, format: uuid}
+        status: {$ref: '#/components/schemas/TaskStatusValue'}
+        progress: {$ref: '#/components/schemas/Progress'}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+        expires_at: {type: string, format: date-time}
+        error:
+          oneOf:
+            - $ref: '#/components/schemas/ItemError'
+            - type: 'null'
+    TaskResults:
+      allOf:
+        - $ref: '#/components/schemas/TaskStatus'
+        - type: object
+          required: [execution_mode, model, outcomes]
+          properties:
+            execution_mode: {type: string, enum: [stub, model]}
+            model: {$ref: '#/components/schemas/ResolvedModelReference'}
+            outcomes:
+              type: array
+              items:
+                $ref: '#/components/schemas/ExtractionOutcome'
+    ResolvedModelReference:
+      type: object
+      required: [name, version]
+      properties:
+        name: {type: string}
+        version: {type: string}
+    ExtractionOutcome:
+      type: object
+      required: [source_id, status, properties]
+      properties:
+        source_id: {type: string}
+        status: {type: string, enum: [completed, failed]}
+        properties:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/PropertyResult'
+        error:
+          oneOf:
+            - $ref: '#/components/schemas/ItemError'
+            - type: 'null'
+    PropertyResult:
+      type: object
+      required: [value, inference_status, uncertainty]
+      properties:
+        value: {}
+        inference_status: {type: string, enum: [inferred, not_found, not_inferred]}
+        uncertainty: {$ref: '#/components/schemas/UncertaintyResult'}
+    UncertaintyResult:
+      type: object
+      required: [value, status]
+      properties:
+        value: {type: [number, 'null'], minimum: 0, maximum: 1}
+        status: {type: string, enum: [calculated, not_calculated]}
+    ItemError:
+      type: object
+      required: [code, detail]
+      properties:
+        code: {type: string}
+        detail: {type: string}
+    ResultsPendingError:
+      type: object
+      required: [detail, status]
+      properties:
+        detail: {type: string}
+        status: {$ref: '#/components/schemas/TaskStatusValue'}
+    ErrorResponse:
+      type: object
+      required: [detail]
+      properties:
+        detail: {type: string}
+        limit: {type: [integer, 'null']}

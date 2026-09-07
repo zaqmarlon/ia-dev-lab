@@ -13,6 +13,91 @@ class LifecycleStatus(str, Enum):
     ACTIVE = "active"
 
 
+class ExtractionTaskStatus(str, Enum):
+    """Enumerate the externally visible task lifecycle states."""
+
+    QUEUED = "queued"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    PARTIALLY_COMPLETED = "partially_completed"
+    FAILED = "failed"
+
+    @property
+    def is_terminal(self) -> bool:
+        """Return whether this status can no longer transition."""
+        return self in {
+            self.COMPLETED,
+            self.PARTIALLY_COMPLETED,
+            self.FAILED,
+        }
+
+
+class ExtractionTaskItemStatus(str, Enum):
+    """Enumerate durable item processing states."""
+
+    QUEUED = "queued"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+@dataclass(frozen=True)
+class ExtractionTaskRecord:
+    """Represent a task projection with lifecycle and optional snapshots."""
+
+    task_id: str
+    owner_id: str
+    status: ExtractionTaskStatus
+    accepted_count: int
+    processed_count: int
+    successful_count: int
+    failed_count: int
+    created_at: datetime
+    updated_at: datetime
+    expires_at: datetime
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    criteria: Optional[dict[str, Any]] = None
+    model: Optional[dict[str, Any]] = None
+    error: Optional[dict[str, str]] = None
+    lease_owner: Optional[str] = None
+    lease_expires_at: Optional[datetime] = None
+    purged_at: Optional[datetime] = None
+
+    @property
+    def is_purged(self) -> bool:
+        """Return whether sensitive task payloads have expired."""
+        return self.purged_at is not None
+
+    def __post_init__(self) -> None:
+        """Enforce progress invariants for every loaded task record."""
+        if self.accepted_count < 1:
+            raise ValueError("accepted_count must be positive")
+        if self.successful_count + self.failed_count != self.processed_count:
+            raise ValueError("successful and failed counts must equal processed count")
+        if not 0 <= self.processed_count <= self.accepted_count:
+            raise ValueError("processed count must be within accepted count")
+        if self.status.is_terminal and self.processed_count != self.accepted_count:
+            raise ValueError("terminal tasks must account for every accepted item")
+        if self.status.is_terminal and self.completed_at is None:
+            raise ValueError("terminal tasks require a completion time")
+
+
+@dataclass(frozen=True)
+class ExtractionTaskItemRecord:
+    """Represent one stored batch item and its optional terminal outcome."""
+
+    task_id: str
+    position: int
+    source_id: str
+    source_text: Optional[str]
+    status: ExtractionTaskItemStatus
+    outcome: Optional[dict[str, Any]] = None
+    error: Optional[dict[str, str]] = None
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+
+
 @dataclass(frozen=True)
 class Model:
     """Represent a stable model identity."""

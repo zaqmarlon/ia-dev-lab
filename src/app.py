@@ -1,11 +1,17 @@
 """FastAPI application for extraction and versioned model management."""
 
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import asynccontextmanager, suppress
 from http import HTTPStatus
 from typing import Optional
+from uuid import UUID
 
-from fastapi import Depends, FastAPI, File, Form, Path as PathParameter, Request, UploadFile
+from fastapi import Depends, FastAPI, File, Form, Path as PathParameter, Request, Response, UploadFile
 from fastapi.exceptions import RequestValidationError
+from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from src.extraction import (
     ExtractionRequestError,
@@ -28,13 +34,32 @@ from src.schemas import (
     ErrorResponse,
     ExtractionRequest,
     ExtractionResponse,
+    ExtractionTaskRequest,
     ModelVersionHistoryResponse,
     ModelVersionResponse,
+    ResultsPendingResponse,
+    TaskProgress,
+    TaskResultsResponse,
+    TaskStatusResponse,
     parse_metadata,
 )
 from src.service import ExtractionService, get_mocked_entities
 from src.settings import Settings
+from src.task_repository import TaskRepository
+from src.task_service import (
+    AuthenticatedPrincipal,
+    BearerAuthenticator,
+    ExtractionTaskService,
+    RejectingBearerAuthenticator,
+    ResultsPendingError,
+    TaskExpiredError,
+    TaskNotFoundError,
+    UnauthorizedTaskError,
+)
 from src.uncertainty import StubUncertaintyEstimator, UncertaintyEstimator
+
+
+bearer_scheme = HTTPBearer(auto_error=False, scheme_name="bearerAuth")
 
 
 async def get_model_service(request: Request) -> ModelService:
@@ -47,11 +72,37 @@ async def get_extraction_service(request: Request) -> ExtractionService:
     return request.app.state.extraction_service
 
 
+async def get_task_service(request: Request) -> ExtractionTaskService:
+    """Return the extraction task service configured for the application."""
+    return request.app.state.task_service
+
+
+async def get_authenticated_principal(
+    request: Request,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
+) -> AuthenticatedPrincipal:
+    """Authenticate the request bearer credential through the injected boundary."""
+    if credentials is None or credentials.scheme.lower() != "bearer":
+        raise UnauthorizedTaskError("Bearer credentials are required")
+    try:
+        principal = request.app.state.authenticator.authenticate(credentials.credentials)
+    except UnauthorizedTaskError:
+        raise
+    except Exception as error:
+        raise UnauthorizedTaskError("Bearer credentials are invalid") from error
+    if not principal.owner_id:
+        raise UnauthorizedTaskError("Bearer credentials are invalid")
+    return principal
+
+
 def create_app(
     settings: Optional[Settings] = None,
     inference_provider: Optional[InferenceProvider] = None,
     uncertainty_estimator: Optional[UncertaintyEstimator] = None,
     model_catalog: Optional[ModelCatalog] = None,
+    authenticator: Optional[BearerAuthenticator] = None,
+    task_repository: Optional[TaskRepository] = None,
+    task_service: Optional[ExtractionTaskService] = None,
 ) -> FastAPI:
     """Create a configured HTTP application."""
     application_settings = settings or Settings.from_environment()
@@ -68,11 +119,50 @@ def create_app(
         application_settings.max_extraction_texts,
         application_settings.max_extraction_characters,
     )
-    application = FastAPI(title="Versioned Model Store API", version="1.0.0")
+    repository = task_repository or TaskRepository(application_settings.database_path)
+    extraction_task_service = task_service or ExtractionTaskService(
+        repository,
+        extraction_service,
+        application_settings.async_extraction_max_texts,
+        application_settings.async_extraction_max_characters,
+        application_settings.task_retention_seconds,
+        application_settings.task_tombstone_seconds,
+        application_settings.task_lease_seconds,
+    )
+
+    @asynccontextmanager
+    async def lifespan(application: FastAPI):
+        """Run one bounded durable extraction worker for the application lifetime."""
+        stop_event = asyncio.Event()
+        executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="extraction-task")
+        worker = asyncio.create_task(
+            application.state.task_service.worker_loop(
+                application.state.settings.task_poll_seconds,
+                stop_event,
+                executor,
+            )
+        )
+        application.state.task_worker = worker
+        try:
+            yield
+        finally:
+            stop_event.set()
+            with suppress(asyncio.CancelledError):
+                await worker
+            executor.shutdown(wait=True)
+
+    application = FastAPI(
+        title="Text Extraction and Model Management API",
+        version="1.0.0",
+        lifespan=lifespan,
+    )
     application.state.settings = application_settings
     application.state.model_store = store
     application.state.model_service = service
     application.state.extraction_service = extraction_service
+    application.state.task_repository = repository
+    application.state.task_service = extraction_task_service
+    application.state.authenticator = authenticator or RejectingBearerAuthenticator()
 
     @application.exception_handler(ModelVersionNotFoundError)
     async def handle_not_found(request: object, error: ModelVersionNotFoundError) -> JSONResponse:
@@ -142,6 +232,39 @@ def create_app(
             status_code=HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
         )
 
+    @application.exception_handler(UnauthorizedTaskError)
+    async def handle_unauthorized_task(request: object, error: UnauthorizedTaskError) -> JSONResponse:
+        """Map absent or invalid bearer credentials to HTTP 401."""
+        return JSONResponse(
+            ErrorResponse(detail=str(error)).model_dump(),
+            status_code=HTTPStatus.UNAUTHORIZED,
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    @application.exception_handler(TaskNotFoundError)
+    async def handle_task_not_found(request: object, error: TaskNotFoundError) -> JSONResponse:
+        """Map unknown and inaccessible tasks to one HTTP 404 shape."""
+        return JSONResponse(
+            ErrorResponse(detail=str(error)).model_dump(),
+            status_code=HTTPStatus.NOT_FOUND,
+        )
+
+    @application.exception_handler(TaskExpiredError)
+    async def handle_task_expired(request: object, error: TaskExpiredError) -> JSONResponse:
+        """Map owner-visible retention expiry to HTTP 410."""
+        return JSONResponse(
+            ErrorResponse(detail=str(error)).model_dump(),
+            status_code=HTTPStatus.GONE,
+        )
+
+    @application.exception_handler(ResultsPendingError)
+    async def handle_results_pending(request: object, error: ResultsPendingError) -> JSONResponse:
+        """Map premature result access to HTTP 409 with current status."""
+        return JSONResponse(
+            ResultsPendingResponse(detail=str(error), status=error.status).model_dump(mode="json"),
+            status_code=HTTPStatus.CONFLICT,
+        )
+
     @application.get("/ping")
     async def ping() -> dict[str, str]:
         """Return the service availability payload."""
@@ -166,6 +289,93 @@ def create_app(
     ) -> ExtractionResponse:
         """Extract a shared property schema from an ordered batch of texts."""
         return ExtractionResponse.model_validate(extraction_service.extract(payload))
+
+    def validate_task_id(task_id: str) -> str:
+        """Normalize a UUID task identifier or use the not-found response."""
+        try:
+            return str(UUID(task_id))
+        except ValueError as error:
+            raise TaskNotFoundError("Task was not found") from error
+
+    def task_status_response(task: object) -> TaskStatusResponse:
+        """Convert a domain task projection to its safe HTTP representation."""
+        return TaskStatusResponse(
+            task_id=task.task_id,
+            status=task.status,
+            progress=TaskProgress(
+                accepted=task.accepted_count,
+                processed=task.processed_count,
+                successful=task.successful_count,
+                failed=task.failed_count,
+            ),
+            created_at=task.created_at,
+            updated_at=task.updated_at,
+            expires_at=task.expires_at,
+            error=task.error,
+        )
+
+    @application.post(
+        "/extraction-tasks",
+        response_model=TaskStatusResponse,
+        status_code=HTTPStatus.ACCEPTED,
+        responses={
+            401: {"model": ErrorResponse},
+            413: {"model": ErrorResponse},
+            422: {"model": ErrorResponse},
+        },
+    )
+    async def create_extraction_task(
+        payload: ExtractionTaskRequest,
+        response: Response,
+        principal: AuthenticatedPrincipal = Depends(get_authenticated_principal),
+        service: ExtractionTaskService = Depends(get_task_service),
+    ) -> TaskStatusResponse:
+        """Durably accept an authenticated extraction batch for later processing."""
+        task = service.submit(principal.owner_id, payload)
+        response.headers["Location"] = f"/extraction-tasks/{task.task_id}"
+        return task_status_response(task)
+
+    @application.get(
+        "/extraction-tasks/{task_id}",
+        response_model=TaskStatusResponse,
+        responses={
+            401: {"model": ErrorResponse},
+            404: {"model": ErrorResponse},
+            410: {"model": ErrorResponse},
+        },
+    )
+    async def get_extraction_task(
+        task_id: str,
+        principal: AuthenticatedPrincipal = Depends(get_authenticated_principal),
+        service: ExtractionTaskService = Depends(get_task_service),
+    ) -> TaskStatusResponse:
+        """Return owner-scoped task lifecycle and progress."""
+        return task_status_response(service.get_status(principal.owner_id, validate_task_id(task_id)))
+
+    @application.get(
+        "/extraction-tasks/{task_id}/results",
+        response_model=TaskResultsResponse,
+        responses={
+            401: {"model": ErrorResponse},
+            404: {"model": ErrorResponse},
+            409: {"model": ResultsPendingResponse},
+            410: {"model": ErrorResponse},
+        },
+    )
+    async def get_extraction_task_results(
+        task_id: str,
+        principal: AuthenticatedPrincipal = Depends(get_authenticated_principal),
+        service: ExtractionTaskService = Depends(get_task_service),
+    ) -> TaskResultsResponse:
+        """Return complete ordered outcomes for an owned terminal task."""
+        result = service.get_results(principal.owner_id, validate_task_id(task_id))
+        status = task_status_response(result.task)
+        return TaskResultsResponse(
+            **status.model_dump(),
+            execution_mode=result.execution_mode,
+            model=result.model,
+            outcomes=result.outcomes,
+        )
 
     def response(version_record: ModelVersion) -> ModelVersionResponse:
         """Convert a domain version to its HTTP response schema."""
@@ -239,6 +449,24 @@ def create_app(
     ) -> ModelVersionResponse:
         """Atomically activate one eligible model version."""
         return response(model_service.activate(model_name, version))
+
+    def custom_openapi() -> dict[str, object]:
+        """Publish manual task UUID failures as 404 without a generated 422 response."""
+        if application.openapi_schema is None:
+            schema = get_openapi(
+                title=application.title,
+                version=application.version,
+                routes=application.routes,
+            )
+            for path in (
+                "/extraction-tasks/{task_id}",
+                "/extraction-tasks/{task_id}/results",
+            ):
+                schema["paths"][path]["get"]["responses"].pop("422", None)
+            application.openapi_schema = schema
+        return application.openapi_schema
+
+    application.openapi = custom_openapi
 
     return application
 

@@ -1,5 +1,7 @@
 """Application workflows for legacy and schema-driven extraction."""
 
+from typing import Union
+
 from src.extraction import (
     ExtractionOutcome,
     ExtractionRequestError,
@@ -10,9 +12,10 @@ from src.extraction import (
     ModelCatalog,
     OutcomeStatus,
     PropertyResult,
+    ResolvedModelReference,
 )
 from src.inference import InferenceProvider, InferenceValue
-from src.schemas import ExtractionRequest
+from src.schemas import ExtractionRequest, ExtractionTaskRequest
 from src.uncertainty import UncertaintyEstimator
 
 
@@ -37,17 +40,13 @@ class ExtractionService:
     def extract(self, request: ExtractionRequest) -> ExtractionResult:
         """Return ordered outcomes while isolating failures to their source text."""
         self._validate_limits(request)
-        selection = request.model
-        model = self.model_catalog.resolve(
-            selection.name if selection else None,
-            selection.version if selection else None,
-        )
+        model = self.resolve_model(request)
         property_names = tuple(
             property_definition.name
             for property_definition in request.schema.properties
         )
         outcomes = [
-            self._extract_source(source.id, source.text, property_names)
+            self.process_source_with_model(source.id, source.text, property_names, model)
             for source in request.texts
         ]
         return ExtractionResult(
@@ -67,13 +66,25 @@ class ExtractionService:
         if character_count > self.max_characters:
             raise ExtractionVolumeError(self.max_characters)
 
-    def _extract_source(
+    def resolve_model(
+        self,
+        request: Union[ExtractionRequest, ExtractionTaskRequest],
+    ) -> ResolvedModelReference:
+        """Resolve and return the model selected by an extraction request."""
+        selection = request.model
+        return self.model_catalog.resolve(
+            selection.name if selection else None,
+            selection.version if selection else None,
+        )
+
+    def process_source_with_model(
         self,
         source_id: str,
         text: str,
         property_names: tuple[str, ...],
+        model: ResolvedModelReference,
     ) -> ExtractionOutcome:
-        """Process one source and convert provider errors to a failed outcome."""
+        """Process one source using an already resolved immutable model reference."""
         try:
             inferred = self.inference_provider.infer(source_id, text, property_names)
             properties = {

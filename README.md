@@ -26,6 +26,12 @@ The interactive API documentation is available at `http://localhost:8000/docs`.
 | `MODEL_STORE_MAX_ARTIFACT_SIZE` | `52428800` | Published maximum upload size in bytes (50 MiB) |
 | `EXTRACTION_MAX_TEXTS` | `10` | Maximum source texts accepted per extraction request |
 | `EXTRACTION_MAX_CHARACTERS` | `100000` | Maximum combined source characters per extraction request |
+| `ASYNC_EXTRACTION_MAX_TEXTS` | `100` | Maximum source texts accepted per asynchronous task |
+| `ASYNC_EXTRACTION_MAX_CHARACTERS` | `1000000` | Maximum combined characters per asynchronous task |
+| `EXTRACTION_TASK_RETENTION_SECONDS` | `86400` | Result and source payload retention after acceptance |
+| `EXTRACTION_TASK_TOMBSTONE_SECONDS` | `604800` | Owner-visible expired tombstone period |
+| `EXTRACTION_TASK_LEASE_SECONDS` | `300` | Worker lease and restart-recovery interval |
+| `EXTRACTION_TASK_POLL_SECONDS` | `0.25` | Idle worker polling interval |
 
 ## Tests
 
@@ -42,6 +48,9 @@ Run the complete suite from the repository root:
 | `GET` | `/ping` | Check service availability |
 | `POST` | `/entities` | Return the current mocked extraction result |
 | `POST` | `/extractions` | Extract a shared property schema from an identified text batch |
+| `POST` | `/extraction-tasks` | Durably accept an authenticated batch and return its task ID |
+| `GET` | `/extraction-tasks/{task_id}` | Poll owner-scoped lifecycle and progress |
+| `GET` | `/extraction-tasks/{task_id}/results` | Retrieve ordered outcomes after termination |
 | `POST` | `/models/{model_name}/versions` | Register an immutable artifact using multipart form data |
 | `GET` | `/models/{model_name}/versions` | List versions in descending numeric order |
 | `GET` | `/models/{model_name}/versions/{version}` | Retrieve one version |
@@ -58,6 +67,16 @@ curl -sS -X POST http://localhost:8000/extractions \
 The initial extraction provider is an explicit stub. Successful item outcomes contain every requested property with a null value, `not_inferred` inference status, and `not_calculated` uncertainty status. The service never presents stub values as model predictions.
 
 Malformed text or schema fields return HTTP `422`. A request above the configured combined-character limit returns HTTP `413` and includes the applicable limit. Runtime failure of one accepted source produces a failed item outcome while preserving the remaining results and original order.
+
+## Asynchronous extraction
+
+Task routes require bearer authentication. Deployments inject an implementation of `BearerAuthenticator` through `create_app`; the default authenticator rejects all credentials so the service cannot accidentally trust arbitrary tokens. The returned owner identity scopes every status and result query.
+
+Submission returns HTTP `202` only after the task and all source items commit to SQLite. A lifespan-managed worker leases queued work and resumes incomplete work after lease expiry. Task states progress from `queued` to `processing`, then to `completed`, `partially_completed`, or `failed`; terminal states and progress counts are immutable.
+
+Results are available only for terminal tasks. Before completion the results endpoint returns `409` with the current status. Sensitive source, criteria, model, error, and outcome payloads are purged at the retention boundary; the owner receives `410` during the tombstone period, after which the task is indistinguishable from an unknown ID.
+
+Use the `Location` header returned during submission as the polling URL. A complete authenticated curl workflow is documented in [`specs/003-batch-entity-extraction/quickstart.md`](specs/003-batch-entity-extraction/quickstart.md).
 
 Register a placeholder artifact:
 
@@ -82,6 +101,8 @@ src/models.py         Domain records and errors
 src/schemas.py        HTTP schemas
 src/settings.py       Environment configuration
 src/service.py        Batch extraction orchestration and legacy mock
+src/task_repository.py SQLite task queue, lifecycle, outcomes, and retention
+src/task_service.py   Authentication boundary and asynchronous orchestration
 src/uncertainty.py    Replaceable uncertainty protocol and stub
 tests/                Unit, contract, persistence, concurrency, and HTTP tests
 ```

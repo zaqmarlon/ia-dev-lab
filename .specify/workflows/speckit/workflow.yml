@@ -76,3 +76,15 @@ steps:
     integration: "{{ inputs.integration }}"
     input:
       args: "{{ inputs.spec }}"
+
+  - id: approve-commit
+    type: gate
+    message: "Confira a implementação e aprove o commit."
+    options: [approve, reject]
+    on_reject: abort
+
+  - id: commit
+    type: shell
+    run: |
+      git add .
+      git commit

@@ -5,11 +5,12 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Optional
 import warnings
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from src.extraction import ExecutionMode, InferenceStatus, OutcomeStatus, UncertaintyStatus
-from src.models import LifecycleStatus
+from src.models import ExtractionTaskStatus, LifecycleStatus
 
 
 EntityItem = dict[str, object]
@@ -106,6 +107,21 @@ with warnings.catch_warnings():
                 raise ValueError("source identifiers must be unique")
             return self
 
+    class ExtractionTaskRequest(BaseModel):
+        """Validate a complete asynchronous extraction batch."""
+
+        texts: list[SourceText] = Field(min_length=1, max_length=100)
+        schema: ExtractionSchema
+        model: Optional[ModelSelection] = None
+
+        @model_validator(mode="after")
+        def require_unique_source_ids(self) -> "ExtractionTaskRequest":
+            """Reject duplicate source identifiers before task persistence."""
+            identifiers = [source.id for source in self.texts]
+            if len(identifiers) != len(set(identifiers)):
+                raise ValueError("source identifiers must be unique")
+            return self
+
 
 class ResolvedModelReference(BaseModel):
     """Serialize the model or stub selected for execution."""
@@ -163,6 +179,42 @@ class ExtractionResponse(BaseModel):
     execution_mode: ExecutionMode
     model: ResolvedModelReference
     outcomes: list[ExtractionOutcome]
+
+
+class TaskProgress(BaseModel):
+    """Serialize monotonic task item counters."""
+
+    accepted: int = Field(ge=1)
+    processed: int = Field(ge=0)
+    successful: int = Field(ge=0)
+    failed: int = Field(ge=0)
+
+
+class TaskStatusResponse(BaseModel):
+    """Serialize task lifecycle without sensitive request or result data."""
+
+    task_id: UUID
+    status: ExtractionTaskStatus
+    progress: TaskProgress
+    created_at: datetime
+    updated_at: datetime
+    expires_at: datetime
+    error: Optional[ItemError] = None
+
+
+class TaskResultsResponse(TaskStatusResponse):
+    """Serialize the complete ordered outcomes for a terminal task."""
+
+    execution_mode: ExecutionMode
+    model: ResolvedModelReference
+    outcomes: list[ExtractionOutcome]
+
+
+class ResultsPendingResponse(BaseModel):
+    """Serialize rejection of a non-terminal result request."""
+
+    detail: str
+    status: ExtractionTaskStatus
 
 
 class ModelVersionResponse(BaseModel):
