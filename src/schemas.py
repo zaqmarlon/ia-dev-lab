@@ -1,12 +1,59 @@
 """Data structures and validation for structured text extraction."""
 
 from dataclasses import dataclass
+from datetime import datetime
+import json
 from typing import Any
 
 from jsonschema import Draft202012Validator, SchemaError
+from pydantic import BaseModel, ConfigDict, Field
+
+from src.models import LifecycleStatus
 
 
 JsonObject = dict[str, Any]
+
+
+class ModelVersionResponse(BaseModel):
+    """Serialize a registered model version."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    model_name: str
+    version: int = Field(ge=1)
+    status: LifecycleStatus
+    artifact_digest: str
+    artifact_size: int = Field(ge=1)
+    description: str | None = None
+    metadata: JsonObject
+    created_at: datetime
+
+
+class ModelVersionHistoryResponse(BaseModel):
+    """Serialize the complete history for one model."""
+
+    model_name: str
+    versions: list[ModelVersionResponse]
+
+
+class ErrorResponse(BaseModel):
+    """Serialize an actionable API error."""
+
+    detail: str
+    limit: int | None = None
+
+
+def parse_metadata(value: str | None) -> JsonObject:
+    """Parse optional JSON object metadata from a multipart field."""
+    if value in (None, ""):
+        return {}
+    try:
+        parsed = json.loads(value)
+    except (TypeError, json.JSONDecodeError) as error:
+        raise ValueError("metadata must be a valid JSON object") from error
+    if not isinstance(parsed, dict):
+        raise ValueError("metadata must be a JSON object")
+    return parsed
 
 
 class RequestValidationError(ValueError):
