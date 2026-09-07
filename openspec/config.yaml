@@ -30,3 +30,7 @@ schema: spec-driven
 #     archive:
 #       guidance:
 #         - Summarize the archive outcome before finishing
+operations:
+  apply:
+    guidance:
+      - Before making any code change that creates a new API endpoint, pause and request the user's explicit authorization. Planning approval or a request to apply the change does not count as authorization to create the endpoint.
