@@ -1,12 +1,12 @@
 """Tests for the structured extraction endpoint."""
 
 from http import HTTPStatus
-from io import BytesIO
 import json
 import unittest
 from unittest.mock import patch
 
-from src.app import AppHandler
+from src.app import create_app
+from tests.http_client import HttpClient
 
 
 VALID_SCHEMA = {
@@ -42,35 +42,31 @@ class TestEntitiesEndpoint(unittest.TestCase):
     def test_returns_ordered_results_for_multiple_texts(self) -> None:
         """Return one extracted object for each input in matching order."""
         extractor = FakeExtractor([{"name": "Ada"}, {"name": "Linus"}])
-        handler = self._build_handler(
-            {"texts": ["First", "Second"], "schema": VALID_SCHEMA}, extractor
+        response = self._client(extractor).post(
+            "/entities", json={"texts": ["First", "Second"], "schema": VALID_SCHEMA}
         )
 
-        AppHandler.do_POST(handler)
-
-        self.assertEqual(handler.status_code, HTTPStatus.OK)
-        self.assertEqual(self._response(handler), {"results": [{"name": "Ada"}, {"name": "Linus"}]})
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.assertEqual(response.json(), {"results": [{"name": "Ada"}, {"name": "Linus"}]})
         self.assertEqual([call[0] for call in extractor.calls], ["First", "Second"])
 
     def test_returns_one_result_for_one_text(self) -> None:
         """Return a single-item results array for one submitted text."""
-        handler = self._build_handler(
-            {"texts": ["Only"], "schema": VALID_SCHEMA}, FakeExtractor([{"name": "Ada"}])
+        response = self._client(FakeExtractor([{"name": "Ada"}])).post(
+            "/entities", json={"texts": ["Only"], "schema": VALID_SCHEMA}
         )
 
-        AppHandler.do_POST(handler)
-
-        self.assertEqual(handler.status_code, HTTPStatus.OK)
-        self.assertEqual(self._response(handler), {"results": [{"name": "Ada"}]})
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.assertEqual(response.json(), {"results": [{"name": "Ada"}]})
 
     def test_returns_bad_request_for_malformed_json(self) -> None:
         """Reject a body that cannot be decoded as JSON."""
-        handler = self._build_raw_handler(b"{not-json", FakeExtractor([]))
+        response = self._client(FakeExtractor([])).post(
+            "/entities", content=b"{not-json", headers={"Content-Type": "application/json"}
+        )
 
-        AppHandler.do_POST(handler)
-
-        self.assertEqual(handler.status_code, HTTPStatus.BAD_REQUEST)
-        self.assertEqual(self._response(handler), {"detail": "Invalid JSON body"})
+        self.assertEqual(response.status_code, HTTPStatus.BAD_REQUEST)
+        self.assertEqual(response.json(), {"detail": "Invalid JSON body"})
 
     def test_returns_unprocessable_entity_for_invalid_fields(self) -> None:
         """Reject missing, empty, and incorrectly typed request values."""
@@ -84,11 +80,9 @@ class TestEntitiesEndpoint(unittest.TestCase):
         for payload in payloads:
             with self.subTest(payload=payload):
                 extractor = FakeExtractor([])
-                handler = self._build_handler(payload, extractor)
+                response = self._client(extractor).post("/entities", json=payload)
 
-                AppHandler.do_POST(handler)
-
-                self.assertEqual(handler.status_code, HTTPStatus.UNPROCESSABLE_ENTITY)
+                self.assertEqual(response.status_code, HTTPStatus.UNPROCESSABLE_ENTITY)
                 self.assertEqual(extractor.calls, [])
 
     def test_rejects_unsupported_schema_before_extraction(self) -> None:
@@ -100,96 +94,53 @@ class TestEntitiesEndpoint(unittest.TestCase):
             "additionalProperties": False,
         }
         extractor = FakeExtractor([])
-        handler = self._build_handler({"texts": ["Text"], "schema": schema}, extractor)
+        response = self._client(extractor).post(
+            "/entities", json={"texts": ["Text"], "schema": schema}
+        )
 
-        AppHandler.do_POST(handler)
-
-        self.assertEqual(handler.status_code, HTTPStatus.UNPROCESSABLE_ENTITY)
+        self.assertEqual(response.status_code, HTTPStatus.UNPROCESSABLE_ENTITY)
         self.assertEqual(extractor.calls, [])
 
     def test_returns_bad_gateway_without_partial_results(self) -> None:
         """Discard successful items when a later provider call fails."""
         secret = "private customer record"
-        extractor = FakeExtractor([{"name": "Ada"}, RuntimeError(secret)])
-        handler = self._build_handler(
-            {"texts": ["First", secret], "schema": VALID_SCHEMA}, extractor
+        response = self._client(
+            FakeExtractor([{"name": "Ada"}, RuntimeError(secret)])
+        ).post(
+            "/entities", json={"texts": ["First", secret], "schema": VALID_SCHEMA}
         )
 
-        AppHandler.do_POST(handler)
-
-        response = self._response(handler)
-        self.assertEqual(handler.status_code, HTTPStatus.BAD_GATEWAY)
-        self.assertEqual(response, {"detail": "Extraction service failed"})
-        self.assertNotIn(secret, json.dumps(response))
-        self.assertNotIn("results", response)
+        self.assertEqual(response.status_code, HTTPStatus.BAD_GATEWAY)
+        self.assertEqual(response.json(), {"detail": "Extraction service failed"})
+        self.assertNotIn(secret, json.dumps(response.json()))
 
     def test_returns_bad_gateway_for_nonconforming_output(self) -> None:
         """Reject provider output that does not satisfy the schema."""
-        handler = self._build_handler(
-            {"texts": ["Text"], "schema": VALID_SCHEMA}, FakeExtractor([{"other": "value"}])
+        response = self._client(FakeExtractor([{"other": "value"}])).post(
+            "/entities", json={"texts": ["Text"], "schema": VALID_SCHEMA}
         )
 
-        AppHandler.do_POST(handler)
-
-        self.assertEqual(handler.status_code, HTTPStatus.BAD_GATEWAY)
-        self.assertNotIn("results", self._response(handler))
+        self.assertEqual(response.status_code, HTTPStatus.BAD_GATEWAY)
+        self.assertNotIn("results", response.json())
 
     def test_returns_bad_gateway_when_provider_cannot_initialize(self) -> None:
         """Translate provider configuration failures into a safe response."""
-        handler = self._build_handler(
-            {"texts": ["Text"], "schema": VALID_SCHEMA}, FakeExtractor([])
-        )
-        handler.extractor = None
-
         with patch("src.app.OpenAIStructuredExtractor", side_effect=RuntimeError("secret")):
-            AppHandler.do_POST(handler)
+            response = HttpClient(create_app()).post(
+                "/entities", json={"texts": ["Text"], "schema": VALID_SCHEMA}
+            )
 
-        self.assertEqual(handler.status_code, HTTPStatus.BAD_GATEWAY)
-        self.assertEqual(self._response(handler), {"detail": "Extraction service failed"})
+        self.assertEqual(response.status_code, HTTPStatus.BAD_GATEWAY)
+        self.assertEqual(response.json(), {"detail": "Extraction service failed"})
 
     def test_rejects_legacy_text_payload(self) -> None:
         """Reject the replaced singular text request contract."""
-        handler = self._build_handler(
-            {"text": "Legacy", "schema": VALID_SCHEMA}, FakeExtractor([])
+        response = self._client(FakeExtractor([])).post(
+            "/entities", json={"text": "Legacy", "schema": VALID_SCHEMA}
         )
 
-        AppHandler.do_POST(handler)
+        self.assertEqual(response.status_code, HTTPStatus.UNPROCESSABLE_ENTITY)
 
-        self.assertEqual(handler.status_code, HTTPStatus.UNPROCESSABLE_ENTITY)
-
-    def _build_handler(
-        self, payload: object, extractor: FakeExtractor
-    ) -> AppHandler:
-        """Create a handler containing an encoded JSON request."""
-        return self._build_raw_handler(json.dumps(payload).encode("utf-8"), extractor)
-
-    def _build_raw_handler(self, body: bytes, extractor: FakeExtractor) -> AppHandler:
-        """Create a handler wired with in-memory request and response streams."""
-        handler = AppHandler.__new__(AppHandler)
-        handler.path = "/entities"
-        handler.headers = {"Content-Length": str(len(body))}
-        handler.rfile = BytesIO(body)
-        handler.wfile = BytesIO()
-        handler.status_code = None
-        handler.extractor = extractor
-        handler.send_response = self._send_response.__get__(handler, AppHandler)
-        handler.send_header = self._send_header.__get__(handler, AppHandler)
-        handler.end_headers = self._end_headers.__get__(handler, AppHandler)
-        return handler
-
-    def _response(self, handler: AppHandler) -> dict[str, object]:
-        """Decode the captured JSON response."""
-        handler.wfile.seek(0)
-        return json.loads(handler.wfile.read().decode("utf-8"))
-
-    def _send_response(self, status_code: int) -> None:
-        """Capture the response status code."""
-        self.status_code = status_code
-
-    def _send_header(self, name: str, value: str) -> None:
-        """Ignore response headers in the test harness."""
-        return None
-
-    def _end_headers(self) -> None:
-        """Ignore end-of-headers in the test harness."""
-        return None
+    def _client(self, extractor: FakeExtractor) -> HttpClient:
+        """Create a test client with a deterministic extractor."""
+        return HttpClient(create_app(extractor))
