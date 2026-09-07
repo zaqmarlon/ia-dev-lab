@@ -1,0 +1,191 @@
+{
+  "run_id": "1f577962",
+  "workflow_id": "speckit",
+  "installed_workflow_id": "speckit",
+  "installed_registry_root": null,
+  "status": "failed",
+  "current_step_index": 7,
+  "current_step_id": "commit",
+  "step_results": {
+    "specify": {
+      "type": "command",
+      "integration": "codex",
+      "model": null,
+      "options": {},
+      "input": {
+        "args": "Extra\u00e7\u00e3o de entidades em lote com funcionamento ass\u00edncrono ao retornar id de task"
+      },
+      "output": {
+        "command": "speckit.specify",
+        "integration": "codex",
+        "model": null,
+        "options": {},
+        "input": {
+          "args": "Extra\u00e7\u00e3o de entidades em lote com funcionamento ass\u00edncrono ao retornar id de task"
+        },
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "dispatched": true
+      },
+      "status": "completed",
+      "error": null
+    },
+    "review-spec": {
+      "type": "gate",
+      "integration": null,
+      "model": null,
+      "options": [
+        "approve",
+        "reject"
+      ],
+      "input": {},
+      "output": {
+        "message": "Review the generated spec before planning.",
+        "options": [
+          "approve",
+          "reject"
+        ],
+        "on_reject": "abort",
+        "show_file": null,
+        "choice": "approve"
+      },
+      "status": "completed",
+      "error": null
+    },
+    "plan": {
+      "type": "command",
+      "integration": "codex",
+      "model": null,
+      "options": {},
+      "input": {
+        "args": "Extra\u00e7\u00e3o de entidades em lote com funcionamento ass\u00edncrono ao retornar id de task"
+      },
+      "output": {
+        "command": "speckit.plan",
+        "integration": "codex",
+        "model": null,
+        "options": {},
+        "input": {
+          "args": "Extra\u00e7\u00e3o de entidades em lote com funcionamento ass\u00edncrono ao retornar id de task"
+        },
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "dispatched": true
+      },
+      "status": "completed",
+      "error": null
+    },
+    "review-plan": {
+      "type": "gate",
+      "integration": null,
+      "model": null,
+      "options": [
+        "approve",
+        "reject"
+      ],
+      "input": {},
+      "output": {
+        "message": "Review the plan before generating tasks.",
+        "options": [
+          "approve",
+          "reject"
+        ],
+        "on_reject": "abort",
+        "show_file": null,
+        "choice": "approve"
+      },
+      "status": "completed",
+      "error": null
+    },
+    "tasks": {
+      "type": "command",
+      "integration": "codex",
+      "model": null,
+      "options": {},
+      "input": {
+        "args": "Extra\u00e7\u00e3o de entidades em lote com funcionamento ass\u00edncrono ao retornar id de task"
+      },
+      "output": {
+        "command": "speckit.tasks",
+        "integration": "codex",
+        "model": null,
+        "options": {},
+        "input": {
+          "args": "Extra\u00e7\u00e3o de entidades em lote com funcionamento ass\u00edncrono ao retornar id de task"
+        },
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "dispatched": true
+      },
+      "status": "completed",
+      "error": null
+    },
+    "implement": {
+      "type": "command",
+      "integration": "codex",
+      "model": null,
+      "options": {},
+      "input": {
+        "args": "Extra\u00e7\u00e3o de entidades em lote com funcionamento ass\u00edncrono ao retornar id de task"
+      },
+      "output": {
+        "command": "speckit.implement",
+        "integration": "codex",
+        "model": null,
+        "options": {},
+        "input": {
+          "args": "Extra\u00e7\u00e3o de entidades em lote com funcionamento ass\u00edncrono ao retornar id de task"
+        },
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "dispatched": true
+      },
+      "status": "completed",
+      "error": null
+    },
+    "approve-commit": {
+      "type": "gate",
+      "integration": null,
+      "model": null,
+      "options": [
+        "approve",
+        "reject"
+      ],
+      "input": {},
+      "output": {
+        "message": "Confira a implementa\u00e7\u00e3o e aprove o commit.",
+        "options": [
+          "approve",
+          "reject"
+        ],
+        "on_reject": "abort",
+        "show_file": null,
+        "choice": "approve"
+      },
+      "status": "completed",
+      "error": null
+    },
+    "commit": {
+      "type": "shell",
+      "integration": null,
+      "model": null,
+      "options": {},
+      "input": {},
+      "output": {
+        "exit_code": -1,
+        "stdout": "",
+        "stderr": "timeout"
+      },
+      "status": "failed",
+      "error": "Shell command timed out after 300 seconds."
+    }
+  },
+  "workflow_dir": "/home/isaac/dev/ia-dev-lab/.specify/workflows/speckit",
+  "created_at": "2026-09-06T23:51:59.349186+00:00",
+  "updated_at": "2026-09-07T00:43:03.946216+00:00",
+  "error": "Shell command timed out after 300 seconds."
+}
