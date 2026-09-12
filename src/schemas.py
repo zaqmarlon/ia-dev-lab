@@ -190,6 +190,31 @@ class TaskProgress(BaseModel):
     failed: int = Field(ge=0)
 
 
+class RunningTaskCounts(BaseModel):
+    """Serialize running task counts grouped by lifecycle state."""
+
+    total: int = Field(ge=0)
+    queued: int = Field(ge=0)
+    processing: int = Field(ge=0)
+
+
+class RunningTaskProgress(BaseModel):
+    """Serialize aggregate item counters for running tasks."""
+
+    accepted: int = Field(ge=0)
+    processed: int = Field(ge=0)
+    successful: int = Field(ge=0)
+    failed: int = Field(ge=0)
+
+
+class RunningTaskSummaryResponse(BaseModel):
+    """Serialize owner-scoped aggregate statistics for running tasks."""
+
+    status: str = "running"
+    tasks: RunningTaskCounts
+    progress: RunningTaskProgress
+
+
 class TaskStatusResponse(BaseModel):
     """Serialize task lifecycle without sensitive request or result data."""
 

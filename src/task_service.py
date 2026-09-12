@@ -151,6 +151,11 @@ class ExtractionTaskService:
             raise TaskExpiredError("Task results have expired")
         return task
 
+    def get_running_summary(self, owner_id: str) -> dict[str, int]:
+        """Return aggregate progress for an owner's non-terminal tasks."""
+        self.maintain_retention()
+        return self.repository.get_running_summary(owner_id)
+
     def get_results(self, owner_id: str, task_id: str) -> TaskResultsRecord:
         """Return ordered terminal outcomes for an unexpired owned task."""
         self.maintain_retention()

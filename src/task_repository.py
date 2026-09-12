@@ -150,6 +150,26 @@ class TaskRepository:
             raise RuntimeError("Accepted task could not be reloaded")
         return task
 
+    def get_running_summary(self, owner_id: str) -> dict[str, int]:
+        """Return aggregate counters for an owner's queued and processing tasks."""
+        with self.connection() as connection:
+            row = connection.execute(
+                """
+                SELECT
+                    COUNT(*) AS total,
+                    COALESCE(SUM(status = 'queued'), 0) AS queued,
+                    COALESCE(SUM(status = 'processing'), 0) AS processing,
+                    COALESCE(SUM(accepted_count), 0) AS accepted,
+                    COALESCE(SUM(processed_count), 0) AS processed,
+                    COALESCE(SUM(successful_count), 0) AS successful,
+                    COALESCE(SUM(failed_count), 0) AS failed
+                FROM extraction_tasks
+                WHERE owner_id = ? AND status IN ('queued', 'processing')
+                """,
+                (owner_id,),
+            ).fetchone()
+        return {key: int(row[key]) for key in row.keys()}
+
     def claim_task(
         self,
         worker_id: str,

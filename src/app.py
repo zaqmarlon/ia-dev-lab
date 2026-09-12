@@ -38,6 +38,9 @@ from src.schemas import (
     ModelVersionHistoryResponse,
     ModelVersionResponse,
     ResultsPendingResponse,
+    RunningTaskCounts,
+    RunningTaskProgress,
+    RunningTaskSummaryResponse,
     TaskProgress,
     TaskResultsResponse,
     TaskStatusResponse,
@@ -334,6 +337,31 @@ def create_app(
         task = service.submit(principal.owner_id, payload)
         response.headers["Location"] = f"/extraction-tasks/{task.task_id}"
         return task_status_response(task)
+
+    @application.get(
+        "/extraction-tasks/summary",
+        response_model=RunningTaskSummaryResponse,
+        responses={401: {"model": ErrorResponse}},
+    )
+    async def get_running_task_summary(
+        principal: AuthenticatedPrincipal = Depends(get_authenticated_principal),
+        service: ExtractionTaskService = Depends(get_task_service),
+    ) -> RunningTaskSummaryResponse:
+        """Return owner-scoped aggregate statistics for running extraction tasks."""
+        summary = service.get_running_summary(principal.owner_id)
+        return RunningTaskSummaryResponse(
+            tasks=RunningTaskCounts(
+                total=summary["total"],
+                queued=summary["queued"],
+                processing=summary["processing"],
+            ),
+            progress=RunningTaskProgress(
+                accepted=summary["accepted"],
+                processed=summary["processed"],
+                successful=summary["successful"],
+                failed=summary["failed"],
+            ),
+        )
 
     @application.get(
         "/extraction-tasks/{task_id}",
