@@ -57,6 +57,30 @@ class TestExtractionTasksEndpoint(unittest.TestCase):
         invalid = self.client.post("/extraction-tasks", json=self.payload("same", "same"), headers=self.owner)
         self.assertEqual(invalid.status_code, 422)
 
+    def test_summary_returns_owner_scoped_running_task_statistics(self) -> None:
+        """Verify running task statistics aggregate queued and processing work for one owner."""
+        self.client.post(
+            "/extraction-tasks", json=self.payload("first", "second"), headers=self.owner
+        )
+        self.client.post("/extraction-tasks", json=self.payload("other"), headers=self.other)
+        self.application.state.task_repository.claim_task(
+            "test-worker",
+            self.application.state.task_service.clock(),
+            self.application.state.task_service.lease_seconds,
+        )
+
+        response = self.client.get("/extraction-tasks/summary", headers=self.owner)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json(),
+            {
+                "status": "running",
+                "tasks": {"total": 1, "queued": 0, "processing": 1},
+                "progress": {"accepted": 2, "processed": 0, "successful": 0, "failed": 0},
+            },
+        )
+
     def test_polling_and_results_preserve_order_partial_success_and_owner_isolation(self) -> None:
         """Verify the complete mixed-outcome HTTP journey."""
         created = self.client.post("/extraction-tasks", json=self.payload("first", "bad", "third"), headers=self.owner).json()
