@@ -1,0 +1,11 @@
+#!/usr/bin/env sh
+set -eu
+
+printf '%s' 'Human approval required to push. Type yes to continue: ' > /dev/tty
+approval=''
+read -r approval < /dev/tty || true
+
+if [ "$approval" != 'yes' ]; then
+    printf '%s\n' 'Push blocked: human approval is required.' >&2
+    exit 1
+fi
