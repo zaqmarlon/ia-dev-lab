@@ -1,0 +1,9 @@
+#!/usr/bin/env sh
+set -eu
+
+commit_message_file=$1
+
+if ! grep -Eq '^Human-Approved-by:[[:space:]]*[^[:space:]].*$' "$commit_message_file"; then
+    printf '%s\n' 'Commit blocked: add a Human-Approved-by: <name> trailer after human approval.' >&2
+    exit 1
+fi
